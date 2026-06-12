@@ -326,6 +326,12 @@ static UISlider *slider(UIView *parent, NSString *title, float min, float max, f
     return s;
 }
 
+@interface VCEPanHandler : NSObject
++ (instancetype)shared;
+- (void)handlePan:(UIPanGestureRecognizer *)p;
+- (void)handlePanelPan:(UIPanGestureRecognizer *)p;
+@end
+
 @interface VCEBGTapHandler : NSObject
 + (instancetype)shared;
 - (void)tapBG:(id)sender;
@@ -421,11 +427,6 @@ static void showPanel(void) {
 - (void)tap:(id)sender { NSLog(@"[VCAMEnhancer] button tapped"); showPanel(); }
 @end
 
-@interface VCEPanHandler : NSObject
-+ (instancetype)shared;
-- (void)handlePan:(UIPanGestureRecognizer *)p;
-- (void)handlePanelPan:(UIPanGestureRecognizer *)p;
-@end
 @implementation VCEPanHandler
 + (instancetype)shared { static VCEPanHandler *h; static dispatch_once_t once; dispatch_once(&once, ^{ h=[VCEPanHandler new]; }); return h; }
 - (void)handlePan:(UIPanGestureRecognizer *)p { UIWindow *w = gOverlayWindow; CGPoint t=[p translationInView:w.superview ?: w]; w.center=CGPointMake(w.center.x+t.x, w.center.y+t.y); [p setTranslation:CGPointZero inView:w.superview ?: w]; }
