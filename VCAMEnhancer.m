@@ -17,6 +17,7 @@ static BOOL gEnabled = YES;
 static BOOL gMirror = NO;
 static BOOL gDidInstall = NO;
 static CIContext *gCIContext;
+static UIWindow *gOverlayWindow;
 
 static NSString *kSuite = @"VCAMEnhancer";
 
@@ -177,11 +178,15 @@ static UISlider *slider(UIView *parent, NSString *title, float min, float max, f
 
 static void showPanel(void) {
     loadPrefs();
-    UIWindow *win = UIApplication.sharedApplication.keyWindow;
+    UIWindow *win = nil;
+    for (UIWindow *w in UIApplication.sharedApplication.windows) { if (w != gOverlayWindow && !w.hidden) { win = w; break; } }
     if (!win) win = UIApplication.sharedApplication.windows.firstObject;
     if (!win) return;
     UIViewController *root = win.rootViewController;
+    if (!root) { for (UIWindow *w in UIApplication.sharedApplication.windows) { if (w != gOverlayWindow && w.rootViewController) { root = w.rootViewController; break; } } }
     while (root.presentedViewController) root = root.presentedViewController;
+    NSLog(@"[VCAMEnhancer] showPanel root=%@ win=%@", root, win);
+    if (!root) return;
     UIViewController *vc = [UIViewController new]; vc.modalPresentationStyle = UIModalPresentationOverFullScreen;
     UIView *bg = [[UIView alloc] initWithFrame:CGRectZero]; bg.backgroundColor=[[UIColor blackColor] colorWithAlphaComponent:0.72]; bg.layer.cornerRadius=18; bg.translatesAutoresizingMaskIntoConstraints=NO; [vc.view addSubview:bg];
     UIStackView *st = [[UIStackView alloc] initWithFrame:CGRectZero]; st.axis=UILayoutConstraintAxisVertical; st.spacing=10; st.translatesAutoresizingMaskIntoConstraints=NO; [bg addSubview:st];
@@ -200,23 +205,48 @@ static void showPanel(void) {
     [root presentViewController:vc animated:YES completion:nil];
 }
 
+@interface VCEButtonHandler : NSObject
++ (instancetype)shared;
+- (void)tap:(id)sender;
+@end
+@implementation VCEButtonHandler
++ (instancetype)shared { static VCEButtonHandler *h; static dispatch_once_t once; dispatch_once(&once, ^{ h=[VCEButtonHandler new]; }); return h; }
+- (void)tap:(id)sender { NSLog(@"[VCAMEnhancer] button tapped"); showPanel(); }
+@end
+
 @interface VCEPanHandler : NSObject
 + (instancetype)shared;
 - (void)handlePan:(UIPanGestureRecognizer *)p;
 @end
 @implementation VCEPanHandler
 + (instancetype)shared { static VCEPanHandler *h; static dispatch_once_t once; dispatch_once(&once, ^{ h=[VCEPanHandler new]; }); return h; }
-- (void)handlePan:(UIPanGestureRecognizer *)p { UIView *v=p.view; UIView *superv=v.superview; CGPoint t=[p translationInView:superv]; v.center=CGPointMake(v.center.x+t.x, v.center.y+t.y); [p setTranslation:CGPointZero inView:superv]; }
+- (void)handlePan:(UIPanGestureRecognizer *)p { UIWindow *w = gOverlayWindow; CGPoint t=[p translationInView:w.superview ?: w]; w.center=CGPointMake(w.center.x+t.x, w.center.y+t.y); [p setTranslation:CGPointZero inView:w.superview ?: w]; }
 @end
 
 static void installUIButton(void) {
-    UIWindow *win = UIApplication.sharedApplication.keyWindow ?: UIApplication.sharedApplication.windows.firstObject;
-    if (!win || [win viewWithTag:0xECE001]) return;
-    UIButton *b = [UIButton buttonWithType:UIButtonTypeCustom]; b.tag=0xECE001; b.frame=CGRectMake(12, 180, 54, 54); b.layer.cornerRadius=27; b.backgroundColor=[[UIColor purpleColor] colorWithAlphaComponent:0.75]; [b setTitle:@"调" forState:UIControlStateNormal]; b.titleLabel.font=[UIFont boldSystemFontOfSize:24];
-    [b addAction:[UIAction actionWithHandler:^(__kindof UIAction *a){ showPanel(); }] forControlEvents:UIControlEventTouchUpInside];
-    UIPanGestureRecognizer *pan=[[UIPanGestureRecognizer alloc] initWithTarget:[VCEPanHandler shared] action:@selector(handlePan:)];
+    if (gOverlayWindow && !gOverlayWindow.hidden) return;
+    CGRect frame = CGRectMake(60, 360, 62, 62);
+    gOverlayWindow = [[UIWindow alloc] initWithFrame:frame];
+    gOverlayWindow.windowLevel = UIWindowLevelAlert + 2000;
+    gOverlayWindow.backgroundColor = UIColor.clearColor;
+    gOverlayWindow.hidden = NO;
+
+    UIViewController *vc = [UIViewController new];
+    vc.view.backgroundColor = UIColor.clearColor;
+    gOverlayWindow.rootViewController = vc;
+
+    UIButton *b = [UIButton buttonWithType:UIButtonTypeCustom];
+    b.frame = CGRectMake(0, 0, 62, 62);
+    b.layer.cornerRadius = 31;
+    b.backgroundColor = [[UIColor purpleColor] colorWithAlphaComponent:0.85];
+    [b setTitle:@"调" forState:UIControlStateNormal];
+    b.titleLabel.font = [UIFont boldSystemFontOfSize:26];
+    [b addTarget:[VCEButtonHandler shared] action:@selector(tap:) forControlEvents:UIControlEventTouchUpInside];
+    UIPanGestureRecognizer *pan = [[UIPanGestureRecognizer alloc] initWithTarget:[VCEPanHandler shared] action:@selector(handlePan:)];
     [b addGestureRecognizer:pan];
-    [win addSubview:b];
+    [vc.view addSubview:b];
+    [gOverlayWindow makeKeyAndVisible];
+    NSLog(@"[VCAMEnhancer] overlay button installed");
 }
 
 static void tryInstall(void) {
