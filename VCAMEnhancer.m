@@ -21,6 +21,8 @@ static float gLightG = 0.92f;
 static float gLightB = 0.82f;
 static float gColorTemp = 0.0f;
 static float gVignette = 0.0f;
+static float gSharpness = 0.25f;
+static float gDenoise = 0.02f;
 static float gScale = 1.0f;
 static float gOffsetX = 0.0f;
 static float gOffsetY = 0.0f;
@@ -58,6 +60,8 @@ static void loadPrefs(void) {
     if ([ud objectForKey:@"vce_light_b"]) gLightB = [ud floatForKey:@"vce_light_b"];
     if ([ud objectForKey:@"vce_temp"]) gColorTemp = [ud floatForKey:@"vce_temp"];
     if ([ud objectForKey:@"vce_vignette"]) gVignette = [ud floatForKey:@"vce_vignette"];
+    if ([ud objectForKey:@"vce_sharpness"]) gSharpness = [ud floatForKey:@"vce_sharpness"];
+    if ([ud objectForKey:@"vce_denoise"]) gDenoise = [ud floatForKey:@"vce_denoise"];
     if ([ud objectForKey:@"vce_scale"]) gScale = [ud floatForKey:@"vce_scale"];
     if ([ud objectForKey:@"vce_offset_x"]) gOffsetX = [ud floatForKey:@"vce_offset_x"];
     if ([ud objectForKey:@"vce_offset_y"]) gOffsetY = [ud floatForKey:@"vce_offset_y"];
@@ -148,6 +152,21 @@ static CVPixelBufferRef processPixelBuffer(CVPixelBufferRef src) {
         [blend setValue:light forKey:kCIInputImageKey];
         [blend setValue:img forKey:kCIInputBackgroundImageKey];
         img = blend.outputImage ?: img;
+    }
+
+    if (gDenoise > 0.001f) {
+        CIFilter *noise = [CIFilter filterWithName:@"CINoiseReduction"];
+        [noise setValue:img forKey:kCIInputImageKey];
+        [noise setValue:@(clampf(gDenoise,0,0.2)) forKey:@"inputNoiseLevel"];
+        [noise setValue:@(0.35) forKey:@"inputSharpness"];
+        img = noise.outputImage ?: img;
+    }
+
+    if (gSharpness > 0.001f) {
+        CIFilter *sharp = [CIFilter filterWithName:@"CISharpenLuminance"];
+        [sharp setValue:img forKey:kCIInputImageKey];
+        [sharp setValue:@(clampf(gSharpness,0,1.2)) forKey:@"inputSharpness"];
+        img = sharp.outputImage ?: img;
     }
 
     if (gVignette > 0.001f) {
@@ -361,7 +380,9 @@ static void showPanel(void) {
     miniSlider(colorSt,@"饱和",0.0,2.5,gSaturation,^(float v){gSaturation=v;savePref(@"vce_saturation",v);});
     miniSlider(colorSt,@"Gamma",0.3,2.5,gGamma,^(float v){gGamma=v;savePref(@"vce_gamma",v);});
     miniSlider(colorSt,@"色温",-1.0,1.0,gColorTemp,^(float v){gColorTemp=v;savePref(@"vce_temp",v);});
-    UIButton *resetColor=miniBtn(@"↻ 重置色彩",^{gBrightness=0.08;gContrast=1.10;gSaturation=1.12;gGamma=0.92;gColorTemp=0;savePref(@"vce_brightness",gBrightness);savePref(@"vce_contrast",gContrast);savePref(@"vce_saturation",gSaturation);savePref(@"vce_gamma",gGamma);savePref(@"vce_temp",0);}); [colorSt addArrangedSubview:resetColor];
+    miniSlider(colorSt,@"锐化",0.0,1.2,gSharpness,^(float v){gSharpness=v;savePref(@"vce_sharpness",v);});
+    miniSlider(colorSt,@"降噪",0.0,0.2,gDenoise,^(float v){gDenoise=v;savePref(@"vce_denoise",v);});
+    UIButton *resetColor=miniBtn(@"↻ 重置色彩",^{gBrightness=0.08;gContrast=1.10;gSaturation=1.12;gGamma=0.92;gColorTemp=0;gSharpness=0.25;gDenoise=0.02;savePref(@"vce_brightness",gBrightness);savePref(@"vce_contrast",gContrast);savePref(@"vce_saturation",gSaturation);savePref(@"vce_gamma",gGamma);savePref(@"vce_temp",0);savePref(@"vce_sharpness",gSharpness);savePref(@"vce_denoise",gDenoise);}); [colorSt addArrangedSubview:resetColor];
 
     UIStackView *lightSt=basePage(pages[3]);
     UISwitch *le=[UISwitch new]; le.on=gLightEnabled; UILabel*lel=miniLabel(@"💡 启用脸部打光",15,UIFontWeightBold); UIStackView*lr=[[UIStackView alloc]initWithArrangedSubviews:@[lel,le]]; lr.axis=UILayoutConstraintAxisHorizontal; lr.distribution=UIStackViewDistributionEqualSpacing; [lightSt addArrangedSubview:lr]; [le addAction:[UIAction actionWithHandler:^(__kindof UIAction*a){gLightEnabled=((UISwitch*)a.sender).on;saveBool(@"vce_light_enabled",gLightEnabled);}] forControlEvents:UIControlEventValueChanged];
