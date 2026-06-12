@@ -1,0 +1,37 @@
+name: Build VCAMEnhancer
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install ldid
+        run: brew install ldid
+      - name: Build dylib
+        run: |
+          mkdir -p out
+          SDK=$(xcrun --sdk iphoneos --show-sdk-path)
+          clang -arch arm64 -arch arm64e \
+            -dynamiclib \
+            -isysroot "$SDK" \
+            -miphoneos-version-min=14.0 \
+            -fobjc-arc \
+            -framework Foundation -framework UIKit -framework CoreMedia -framework CoreVideo -framework CoreImage \
+            -install_name @rpath/VCAMEnhancer.dylib \
+            -o out/VCAMEnhancer.dylib \
+            VCAMEnhancer.m
+          ldid -S out/VCAMEnhancer.dylib
+          ls -lh out
+      - uses: actions/upload-artifact@v4
+        with:
+          name: VCAMEnhancer
+          path: out/VCAMEnhancer.dylib
+      - name: Release on tag
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          gh release create "${{ github.ref_name }}" out/VCAMEnhancer.dylib --title "VCAMEnhancer ${{ github.ref_name }}" --notes "TrollFools dylib: color/light post-processing controls"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
