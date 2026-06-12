@@ -293,6 +293,7 @@ static void showPanel(void) {
     UIViewController *vc = [UIViewController new]; vc.modalPresentationStyle = UIModalPresentationOverFullScreen;
     vc.view.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.4];
     UITapGestureRecognizer *bgTap = [[UITapGestureRecognizer alloc] initWithTarget:[VCEBGTapHandler shared] action:@selector(tapBG:)];
+    bgTap.cancelsTouchesInView = NO;
     [vc.view addGestureRecognizer:bgTap];
     UIView *bg = [[UIView alloc] initWithFrame:CGRectZero]; bg.backgroundColor=[[UIColor blackColor] colorWithAlphaComponent:0.92]; bg.layer.cornerRadius=18; bg.translatesAutoresizingMaskIntoConstraints=NO; [vc.view addSubview:bg];
     UIScrollView *scroll = [[UIScrollView alloc] initWithFrame:CGRectZero]; scroll.translatesAutoresizingMaskIntoConstraints=NO; [bg addSubview:scroll];
