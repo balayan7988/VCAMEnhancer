@@ -292,8 +292,7 @@ static void showPanel(void) {
     if (!root) return;
     UIViewController *vc = [UIViewController new]; vc.modalPresentationStyle = UIModalPresentationOverFullScreen;
     vc.view.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.4];
-    UITapGestureRecognizer *bgTap = [[UITapGestureRecognizer alloc] initWithTarget:nil action:nil];
-    [bgTap addAction:[UIAction actionWithHandler:^(__kindof UIAction *a){ [vc dismissViewControllerAnimated:YES completion:nil]; }]];
+    UITapGestureRecognizer *bgTap = [[UITapGestureRecognizer alloc] initWithTarget:[VCEBGTapHandler shared] action:@selector(tapBG:)];
     [vc.view addGestureRecognizer:bgTap];
     UIView *bg = [[UIView alloc] initWithFrame:CGRectZero]; bg.backgroundColor=[[UIColor blackColor] colorWithAlphaComponent:0.92]; bg.layer.cornerRadius=18; bg.translatesAutoresizingMaskIntoConstraints=NO; [vc.view addSubview:bg];
     UIScrollView *scroll = [[UIScrollView alloc] initWithFrame:CGRectZero]; scroll.translatesAutoresizingMaskIntoConstraints=NO; [bg addSubview:scroll];
@@ -335,6 +334,15 @@ static void showPanel(void) {
     [NSLayoutConstraint activateConstraints:@[[bg.centerXAnchor constraintEqualToAnchor:vc.view.centerXAnchor],[bg.centerYAnchor constraintEqualToAnchor:vc.view.centerYAnchor],[bg.widthAnchor constraintEqualToConstant:360],[bg.heightAnchor constraintLessThanOrEqualToConstant:720],[scroll.topAnchor constraintEqualToAnchor:bg.topAnchor constant:18],[scroll.bottomAnchor constraintEqualToAnchor:bg.bottomAnchor constant:-18],[scroll.leftAnchor constraintEqualToAnchor:bg.leftAnchor constant:18],[scroll.rightAnchor constraintEqualToAnchor:bg.rightAnchor constant:-18],[st.topAnchor constraintEqualToAnchor:scroll.contentLayoutGuide.topAnchor],[st.bottomAnchor constraintEqualToAnchor:scroll.contentLayoutGuide.bottomAnchor],[st.leftAnchor constraintEqualToAnchor:scroll.contentLayoutGuide.leftAnchor],[st.rightAnchor constraintEqualToAnchor:scroll.contentLayoutGuide.rightAnchor],[st.widthAnchor constraintEqualToAnchor:scroll.frameLayoutGuide.widthAnchor]]];
     [root presentViewController:vc animated:YES completion:nil];
 }
+
+@interface VCEBGTapHandler : NSObject
++ (instancetype)shared;
+- (void)tapBG:(id)sender;
+@end
+@implementation VCEBGTapHandler
++ (instancetype)shared { static VCEBGTapHandler *h; static dispatch_once_t once; dispatch_once(&once, ^{ h=[VCEBGTapHandler new]; }); return h; }
+- (void)tapBG:(id)sender { UIViewController *vc = [sender view].nextResponder; while (vc && ![vc isKindOfClass:UIViewController.class]) vc = (id)[vc nextResponder]; if (vc) [vc dismissViewControllerAnimated:YES completion:nil]; }
+@end
 
 @interface VCEButtonHandler : NSObject
 + (instancetype)shared;
