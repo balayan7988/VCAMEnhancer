@@ -80,6 +80,12 @@ static void saveBool(NSString *key, BOOL val) {
     [ud setBool:val forKey:key];
     [ud synchronize];
 }
+static void savePanelFrame(CGRect frame) {
+    NSUserDefaults *ud = [NSUserDefaults standardUserDefaults];
+    [ud setFloat:frame.origin.x forKey:@"vce_panel_x"];
+    [ud setFloat:frame.origin.y forKey:@"vce_panel_y"];
+    [ud synchronize];
+}
 
 static void hsvToRGB(float h, float s, float v, float *r, float *g, float *b) {
     float c = v * s;
@@ -350,13 +356,20 @@ static void showPanel(void) {
     if (gPanelWindow && !gPanelWindow.hidden) { gPanelWindow.hidden=YES; gPanelWindow=nil; return; }
     CGRect screen = UIScreen.mainScreen.bounds;
     CGFloat pw=316, ph=348;
-    gPanelWindow = [[UIWindow alloc] initWithFrame:CGRectMake((screen.size.width-pw)/2.0, (screen.size.height-ph)/2.0, pw, ph)];
+    NSUserDefaults *ud = [NSUserDefaults standardUserDefaults];
+    CGFloat savedX = [ud objectForKey:@"vce_panel_x"] ? [ud floatForKey:@"vce_panel_x"] : (screen.size.width-pw)/2.0;
+    CGFloat savedY = [ud objectForKey:@"vce_panel_y"] ? [ud floatForKey:@"vce_panel_y"] : (screen.size.height-ph)*0.58;
+    savedX = MAX(4, MIN(savedX, screen.size.width - pw - 4));
+    savedY = MAX(20, MIN(savedY, screen.size.height - ph - 20));
+    gPanelWindow = [[UIWindow alloc] initWithFrame:CGRectMake(savedX, savedY, pw, ph)];
     gPanelWindow.windowLevel = UIWindowLevelAlert + 1999;
     gPanelWindow.backgroundColor = UIColor.clearColor;
     UIViewController *vc=[UIViewController new]; vc.view.backgroundColor=UIColor.clearColor; gPanelWindow.rootViewController=vc;
 
     UIView *panel=[UIView new]; panel.frame=CGRectMake(0,0,pw,ph); panel.backgroundColor=vcePanelBG(); panel.layer.cornerRadius=18; panel.layer.masksToBounds=YES; [vc.view addSubview:panel];
-    UILabel *title=miniLabel(@"✏️ 编辑",20,UIFontWeightBold); title.frame=CGRectMake(14,12,180,30); [panel addSubview:title];
+    UILabel *title=miniLabel(@"✏️ 编辑",20,UIFontWeightBold); title.frame=CGRectMake(14,12,180,30); title.userInteractionEnabled=YES; [panel addSubview:title];
+    UIPanGestureRecognizer *panelPan=[[UIPanGestureRecognizer alloc] initWithTarget:[VCEPanHandler shared] action:@selector(handlePanelPan:)];
+    [panel addGestureRecognizer:panelPan];
     UIButton *close=[UIButton buttonWithType:UIButtonTypeCustom]; close.frame=CGRectMake(pw-56,8,46,46); close.layer.cornerRadius=23; close.backgroundColor=[UIColor colorWithRed:0.86 green:0.12 blue:0.12 alpha:0.95]; [close setTitle:@"×" forState:UIControlStateNormal]; close.titleLabel.font=[UIFont systemFontOfSize:30 weight:UIFontWeightLight]; [close addAction:[UIAction actionWithHandler:^(__kindof UIAction*a){gPanelWindow.hidden=YES; gPanelWindow=nil;}] forControlEvents:UIControlEventTouchUpInside]; [panel addSubview:close];
 
     UIStackView *tabs=[UIStackView new]; tabs.frame=CGRectMake(12,64,pw-24,42); tabs.axis=UILayoutConstraintAxisHorizontal; tabs.spacing=6; tabs.distribution=UIStackViewDistributionFillEqually; [panel addSubview:tabs];
@@ -411,10 +424,12 @@ static void showPanel(void) {
 @interface VCEPanHandler : NSObject
 + (instancetype)shared;
 - (void)handlePan:(UIPanGestureRecognizer *)p;
+- (void)handlePanelPan:(UIPanGestureRecognizer *)p;
 @end
 @implementation VCEPanHandler
 + (instancetype)shared { static VCEPanHandler *h; static dispatch_once_t once; dispatch_once(&once, ^{ h=[VCEPanHandler new]; }); return h; }
 - (void)handlePan:(UIPanGestureRecognizer *)p { UIWindow *w = gOverlayWindow; CGPoint t=[p translationInView:w.superview ?: w]; w.center=CGPointMake(w.center.x+t.x, w.center.y+t.y); [p setTranslation:CGPointZero inView:w.superview ?: w]; }
+- (void)handlePanelPan:(UIPanGestureRecognizer *)p { UIWindow *w = gPanelWindow; if(!w) return; CGPoint t=[p translationInView:w.superview ?: w]; CGRect f=w.frame; f.origin.x += t.x; f.origin.y += t.y; CGRect s=UIScreen.mainScreen.bounds; f.origin.x=MAX(4,MIN(f.origin.x,s.size.width-f.size.width-4)); f.origin.y=MAX(20,MIN(f.origin.y,s.size.height-f.size.height-20)); w.frame=f; [p setTranslation:CGPointZero inView:w.superview ?: w]; if(p.state==UIGestureRecognizerStateEnded||p.state==UIGestureRecognizerStateCancelled) savePanelFrame(f); }
 @end
 
 static void installUIButton(void) {
