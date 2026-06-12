@@ -4,6 +4,7 @@
 #import <CoreVideo/CoreVideo.h>
 #import <CoreImage/CoreImage.h>
 #import <objc/runtime.h>
+#import <objc/message.h>
 #import <dispatch/dispatch.h>
 
 static float gBrightness = 0.08f;
@@ -169,7 +170,7 @@ static UISlider *slider(UIView *parent, NSString *title, float min, float max, f
     lab.text = [NSString stringWithFormat:@"%@ %.2f", title, val]; lab.textColor = UIColor.whiteColor; lab.font=[UIFont systemFontOfSize:12 weight:UIFontWeightSemibold];
     UISlider *s = [[UISlider alloc] initWithFrame:CGRectZero]; s.minimumValue=min; s.maximumValue=max; s.value=val;
     [s addAction:[UIAction actionWithHandler:^(__kindof UIAction *a){ UISlider *sl=(UISlider*)a.sender; lab.text=[NSString stringWithFormat:@"%@ %.2f", title, sl.value]; change(sl.value); }] forControlEvents:UIControlEventValueChanged];
-    UIStackView *row = [[UIStackView alloc] initWithArrangedSubviews:@[lab,s]]; row.axis=UILayoutConstraintAxisHorizontal; row.spacing=8; lab.widthAnchor.active=YES; [lab.widthAnchor constraintEqualToConstant:100].active=YES;
+    UIStackView *row = [[UIStackView alloc] initWithArrangedSubviews:@[lab,s]]; row.axis=UILayoutConstraintAxisHorizontal; row.spacing=8; [lab.widthAnchor constraintEqualToConstant:100].active=YES;
     [(UIStackView*)parent addArrangedSubview:row];
     return s;
 }
@@ -199,13 +200,21 @@ static void showPanel(void) {
     [root presentViewController:vc animated:YES completion:nil];
 }
 
+@interface VCEPanHandler : NSObject
++ (instancetype)shared;
+- (void)handlePan:(UIPanGestureRecognizer *)p;
+@end
+@implementation VCEPanHandler
++ (instancetype)shared { static VCEPanHandler *h; static dispatch_once_t once; dispatch_once(&once, ^{ h=[VCEPanHandler new]; }); return h; }
+- (void)handlePan:(UIPanGestureRecognizer *)p { UIView *v=p.view; UIView *superv=v.superview; CGPoint t=[p translationInView:superv]; v.center=CGPointMake(v.center.x+t.x, v.center.y+t.y); [p setTranslation:CGPointZero inView:superv]; }
+@end
+
 static void installUIButton(void) {
     UIWindow *win = UIApplication.sharedApplication.keyWindow ?: UIApplication.sharedApplication.windows.firstObject;
     if (!win || [win viewWithTag:0xECE001]) return;
     UIButton *b = [UIButton buttonWithType:UIButtonTypeCustom]; b.tag=0xECE001; b.frame=CGRectMake(12, 180, 54, 54); b.layer.cornerRadius=27; b.backgroundColor=[[UIColor purpleColor] colorWithAlphaComponent:0.75]; [b setTitle:@"调" forState:UIControlStateNormal]; b.titleLabel.font=[UIFont boldSystemFontOfSize:24];
     [b addAction:[UIAction actionWithHandler:^(__kindof UIAction *a){ showPanel(); }] forControlEvents:UIControlEventTouchUpInside];
-    UIPanGestureRecognizer *pan=[[UIPanGestureRecognizer alloc] initWithTarget:nil action:nil];
-    [pan addAction:[UIAction actionWithHandler:^(__kindof UIAction *a){ UIPanGestureRecognizer *p=(UIPanGestureRecognizer*)a.sender; CGPoint t=[p translationInView:win]; UIView *v=p.view; v.center=CGPointMake(v.center.x+t.x,v.center.y+t.y); [p setTranslation:CGPointZero inView:win]; }]];
+    UIPanGestureRecognizer *pan=[[UIPanGestureRecognizer alloc] initWithTarget:[VCEPanHandler shared] action:@selector(handlePan:)];
     [b addGestureRecognizer:pan];
     [win addSubview:b];
 }
