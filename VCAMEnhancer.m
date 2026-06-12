@@ -157,13 +157,60 @@ static CMSampleBufferRef hook_getCurrentFrameForce(id self, SEL _cmd, CMSampleBu
     return copyProcessedSampleBuffer(sb);
 }
 
-static void hookMethod(Class cls, SEL sel, IMP newImp, IMP *orig) {
-    if (!cls) return;
+// Generic AVCaptureVideoDataOutput delegate proxy: catches final camera sample buffers.
+@interface VCEDelegateProxy : NSObject <AVCaptureVideoDataOutputSampleBufferDelegate>
+@property(nonatomic, weak) id target;
+@end
+@implementation VCEDelegateProxy
+- (void)captureOutput:(AVCaptureOutput *)output didOutputSampleBuffer:(CMSampleBufferRef)sampleBuffer fromConnection:(AVCaptureConnection *)connection {
+    CMSampleBufferRef processed = copyProcessedSampleBuffer(sampleBuffer);
+    id t = self.target;
+    SEL sel = @selector(captureOutput:didOutputSampleBuffer:fromConnection:);
+    if (t && [t respondsToSelector:sel]) {
+        ((void(*)(id,SEL,id,CMSampleBufferRef,id))objc_msgSend)(t, sel, output, processed, connection);
+    }
+    if (processed && processed != sampleBuffer) CFRelease(processed);
+}
+- (BOOL)respondsToSelector:(SEL)aSelector {
+    if (aSelector == @selector(captureOutput:didOutputSampleBuffer:fromConnection:)) return YES;
+    return [self.target respondsToSelector:aSelector] || [super respondsToSelector:aSelector];
+}
+- (id)forwardingTargetForSelector:(SEL)aSelector { return self.target; }
+@end
+
+static NSMutableArray *gDelegateProxies;
+static void (*orig_setSampleBufferDelegate)(id,SEL,id,dispatch_queue_t);
+static void hook_setSampleBufferDelegate(id self, SEL _cmd, id delegate, dispatch_queue_t queue) {
+    if (!gDelegateProxies) gDelegateProxies = [NSMutableArray new];
+    if (delegate) {
+        VCEDelegateProxy *proxy = [VCEDelegateProxy new];
+        proxy.target = delegate;
+        [gDelegateProxies addObject:proxy];
+        NSLog(@"[VCAMEnhancer] delegate proxied %@ -> %@", delegate, proxy);
+        orig_setSampleBufferDelegate(self,_cmd,proxy,queue);
+    } else {
+        orig_setSampleBufferDelegate(self,_cmd,nil,queue);
+    }
+}
+
+static BOOL hookMethod(Class cls, SEL sel, IMP newImp, IMP *orig) {
+    if (!cls) return NO;
     Method m = class_getInstanceMethod(cls, sel);
-    if (!m) return;
+    if (!m) return NO;
     if (orig) *orig = method_getImplementation(m);
     method_setImplementation(m, newImp);
-    NSLog(@"[VCAMEnhancer] hooked %@ %@", cls, NSStringFromSelector(sel));
+    NSLog(@"[VCAMEnhancer] hooked -[%@ %@]", cls, NSStringFromSelector(sel));
+    return YES;
+}
+
+static BOOL hookClassMethod(Class cls, SEL sel, IMP newImp, IMP *orig) {
+    if (!cls) return NO;
+    Method m = class_getClassMethod(cls, sel);
+    if (!m) return NO;
+    if (orig) *orig = method_getImplementation(m);
+    method_setImplementation(m, newImp);
+    NSLog(@"[VCAMEnhancer] hooked +[%@ %@]", cls, NSStringFromSelector(sel));
+    return YES;
 }
 
 static UISlider *slider(UIView *parent, NSString *title, float min, float max, float val, void(^change)(float)) {
@@ -252,6 +299,9 @@ static void installUIButton(void) {
 static void tryInstall(void) {
     if (gDidInstall) { installUIButton(); return; }
     loadPrefs();
+    // Global camera sample-buffer delegate hook: catches most AVCapture outputs.
+    hookMethod(NSClassFromString(@"AVCaptureVideoDataOutput"), NSSelectorFromString(@"setSampleBufferDelegate:queue:"), (IMP)hook_setSampleBufferDelegate, (IMP*)&orig_setSampleBufferDelegate);
+
     // Original 15MB VCAM
     Class media = NSClassFromString(@"MediaManager");
     hookMethod(media, NSSelectorFromString(@"getVideoFrame:"), (IMP)hook_frame1, (IMP*)&orig_getVideoFrame);
