@@ -293,54 +293,95 @@ static void showPanel(void) {
     UIViewController *root = win.rootViewController;
     if (!root) { for (UIWindow *w in UIApplication.sharedApplication.windows) { if (w != gOverlayWindow && w.rootViewController) { root = w.rootViewController; break; } } }
     while (root.presentedViewController) root = root.presentedViewController;
-    NSLog(@"[VCAMEnhancer] showPanel root=%@ win=%@", root, win);
     if (!root) return;
-    UIViewController *vc = [UIViewController new]; vc.modalPresentationStyle = UIModalPresentationOverFullScreen;
-    vc.view.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.4];
+
+    UIViewController *vc = [UIViewController new];
+    vc.modalPresentationStyle = UIModalPresentationOverFullScreen;
+    vc.view.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.20];
+
     UITapGestureRecognizer *bgTap = [[UITapGestureRecognizer alloc] initWithTarget:[VCEBGTapHandler shared] action:@selector(tapBG:)];
     bgTap.cancelsTouchesInView = NO;
     [vc.view addGestureRecognizer:bgTap];
-    UIView *bg = [[UIView alloc] initWithFrame:CGRectZero]; bg.backgroundColor=[[UIColor blackColor] colorWithAlphaComponent:0.92]; bg.layer.cornerRadius=18; bg.translatesAutoresizingMaskIntoConstraints=NO; [vc.view addSubview:bg];
-    UIScrollView *scroll = [[UIScrollView alloc] initWithFrame:CGRectZero]; scroll.translatesAutoresizingMaskIntoConstraints=NO; [bg addSubview:scroll];
-    UIStackView *st = [[UIStackView alloc] initWithFrame:CGRectZero]; st.axis=UILayoutConstraintAxisVertical; st.spacing=10; st.translatesAutoresizingMaskIntoConstraints=NO; [scroll addSubview:st];
-    UILabel *title=[UILabel new]; title.text=@"编辑"; title.textColor=UIColor.whiteColor; title.font=[UIFont boldSystemFontOfSize:20]; title.textAlignment = NSTextAlignmentCenter; [st addArrangedSubview:title];
-    UISwitch *en=[UISwitch new]; en.on=gEnabled; UILabel *enl=[UILabel new]; enl.text=@"启用处理"; enl.textColor=UIColor.whiteColor; UIStackView *er=[[UIStackView alloc] initWithArrangedSubviews:@[enl,en]]; er.axis=UILayoutConstraintAxisHorizontal; er.distribution=UIStackViewDistributionEqualSpacing; [st addArrangedSubview:er]; [en addAction:[UIAction actionWithHandler:^(__kindof UIAction *a){gEnabled=((UISwitch*)a.sender).on; saveBool(@"vce_enabled",gEnabled);} ] forControlEvents:UIControlEventValueChanged];
-    segmented(st,@"",@[@"媒体",@"画面",@"色彩",@"打光"],1,^(NSInteger i){});
 
-    UILabel *sec1=[UILabel new]; sec1.text=@"— 画面 —"; sec1.textColor=[UIColor colorWithWhite:1 alpha:0.75]; [st addArrangedSubview:sec1];
-    slider(st,@"缩放",0.5,2.0,gScale,^(float v){gScale=v;savePref(@"vce_scale",v);});
-    slider(st,@"水平",-1.0,1.0,gOffsetX,^(float v){gOffsetX=v;savePref(@"vce_offset_x",v);});
-    slider(st,@"垂直",-1.0,1.0,gOffsetY,^(float v){gOffsetY=v;savePref(@"vce_offset_y",v);});
-    UIStackView *btns=[[UIStackView alloc] initWithArrangedSubviews:@[
+    UIView *panel = [[UIView alloc] initWithFrame:CGRectZero];
+    panel.translatesAutoresizingMaskIntoConstraints = NO;
+    panel.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.78];
+    panel.layer.cornerRadius = 18;
+    panel.layer.masksToBounds = YES;
+    [vc.view addSubview:panel];
+
+    UILabel *title=[UILabel new]; title.translatesAutoresizingMaskIntoConstraints=NO; title.text=@"✏️ 编辑"; title.textColor=UIColor.whiteColor; title.font=[UIFont boldSystemFontOfSize:22];
+    [panel addSubview:title];
+    UIButton *x=[UIButton buttonWithType:UIButtonTypeCustom]; x.translatesAutoresizingMaskIntoConstraints=NO; x.backgroundColor=[UIColor colorWithRed:0.85 green:0.12 blue:0.12 alpha:0.95]; x.layer.cornerRadius=24; [x setTitle:@"×" forState:UIControlStateNormal]; x.titleLabel.font=[UIFont systemFontOfSize:32 weight:UIFontWeightLight]; [x addAction:[UIAction actionWithHandler:^(__kindof UIAction*a){[vc dismissViewControllerAnimated:YES completion:nil];}] forControlEvents:UIControlEventTouchUpInside]; [panel addSubview:x];
+
+    UISegmentedControl *tabs=[[UISegmentedControl alloc] initWithItems:@[@"媒体",@"画面",@"色彩",@"打光"]];
+    tabs.translatesAutoresizingMaskIntoConstraints=NO; tabs.selectedSegmentIndex=3; [panel addSubview:tabs];
+
+    UIView *content=[UIView new]; content.translatesAutoresizingMaskIntoConstraints=NO; [panel addSubview:content];
+    NSMutableArray<UIView*> *pages=[NSMutableArray new];
+    for (int i=0;i<4;i++){ UIView *pg=[UIView new]; pg.translatesAutoresizingMaskIntoConstraints=NO; pg.hidden=(i!=3); [content addSubview:pg]; [pages addObject:pg]; [NSLayoutConstraint activateConstraints:@[[pg.topAnchor constraintEqualToAnchor:content.topAnchor],[pg.bottomAnchor constraintEqualToAnchor:content.bottomAnchor],[pg.leftAnchor constraintEqualToAnchor:content.leftAnchor],[pg.rightAnchor constraintEqualToAnchor:content.rightAnchor]]]; }
+    [tabs addAction:[UIAction actionWithHandler:^(__kindof UIAction *a){ NSInteger idx=((UISegmentedControl*)a.sender).selectedSegmentIndex; for(int i=0;i<pages.count;i++) pages[i].hidden=(i!=idx); }] forControlEvents:UIControlEventValueChanged];
+
+    // 媒体页：说明原版负责
+    UILabel *media=[UILabel new]; media.translatesAutoresizingMaskIntoConstraints=NO; media.numberOfLines=0; media.text=@"媒体控制请继续使用原版 VCAM 面板：\n从相册/文件选择、直播流、暂停、循环、声音、删除等。\n本增强器只处理画面/色彩/打光。"; media.textColor=UIColor.whiteColor; media.font=[UIFont systemFontOfSize:15 weight:UIFontWeightSemibold]; [pages[0] addSubview:media];
+    [NSLayoutConstraint activateConstraints:@[[media.topAnchor constraintEqualToAnchor:pages[0].topAnchor constant:20],[media.leftAnchor constraintEqualToAnchor:pages[0].leftAnchor constant:8],[media.rightAnchor constraintEqualToAnchor:pages[0].rightAnchor constant:-8]]];
+
+    // 画面页
+    UIStackView *screen=[UIStackView new]; screen.translatesAutoresizingMaskIntoConstraints=NO; screen.axis=UILayoutConstraintAxisVertical; screen.spacing=12; [pages[1] addSubview:screen];
+    slider(screen,@"缩放",0.5,2.0,gScale,^(float v){gScale=v;savePref(@"vce_scale",v);});
+    slider(screen,@"水平",-1.0,1.0,gOffsetX,^(float v){gOffsetX=v;savePref(@"vce_offset_x",v);});
+    slider(screen,@"垂直",-1.0,1.0,gOffsetY,^(float v){gOffsetY=v;savePref(@"vce_offset_y",v);});
+    UIStackView *rot=[[UIStackView alloc] initWithArrangedSubviews:@[
         smallBtn(@"左转",^{gRotateMode=3; [[NSUserDefaults standardUserDefaults] setInteger:gRotateMode forKey:@"vce_rotate"];}),
         smallBtn(@"右转",^{gRotateMode=1; [[NSUserDefaults standardUserDefaults] setInteger:gRotateMode forKey:@"vce_rotate"];}),
         smallBtn(@"镜像",^{gMirror=!gMirror; saveBool(@"vce_mirror",gMirror);}),
-        smallBtn(@"重置画面",^{gScale=1;gOffsetX=0;gOffsetY=0;gRotateMode=0;savePref(@"vce_scale",1);savePref(@"vce_offset_x",0);savePref(@"vce_offset_y",0);[[NSUserDefaults standardUserDefaults] setInteger:0 forKey:@"vce_rotate"];})
-    ]]; btns.axis=UILayoutConstraintAxisHorizontal; btns.spacing=6; btns.distribution=UIStackViewDistributionFillEqually; [st addArrangedSubview:btns];
+        smallBtn(@"重置",^{gScale=1;gOffsetX=0;gOffsetY=0;gRotateMode=0;savePref(@"vce_scale",1);savePref(@"vce_offset_x",0);savePref(@"vce_offset_y",0);[[NSUserDefaults standardUserDefaults] setInteger:0 forKey:@"vce_rotate"];})
+    ]]; rot.axis=UILayoutConstraintAxisHorizontal; rot.spacing=8; rot.distribution=UIStackViewDistributionFillEqually; [screen addArrangedSubview:rot];
+    UILabel *fill=[UILabel new]; fill.text=@"背景填充色"; fill.textColor=UIColor.whiteColor; [screen addArrangedSubview:fill];
+    UIStackView *colors=[UIStackView new]; colors.axis=UILayoutConstraintAxisHorizontal; colors.spacing=6; colors.distribution=UIStackViewDistributionFillEqually; NSArray *cs=@[UIColor.blackColor,UIColor.whiteColor,UIColor.darkGrayColor,UIColor.lightGrayColor,UIColor.blueColor,UIColor.greenColor,UIColor.redColor,[UIColor colorWithRed:0.12 green:0.08 blue:0.05 alpha:1]]; for(UIColor *c in cs){UIButton *b=[UIButton buttonWithType:UIButtonTypeCustom]; b.backgroundColor=c; b.layer.cornerRadius=6; [b.heightAnchor constraintEqualToConstant:36].active=YES; [colors addArrangedSubview:b];} [screen addArrangedSubview:colors];
+    [NSLayoutConstraint activateConstraints:@[[screen.topAnchor constraintEqualToAnchor:pages[1].topAnchor constant:14],[screen.leftAnchor constraintEqualToAnchor:pages[1].leftAnchor constant:8],[screen.rightAnchor constraintEqualToAnchor:pages[1].rightAnchor constant:-8]]];
 
-    UILabel *sec2=[UILabel new]; sec2.text=@"— 色彩 —"; sec2.textColor=[UIColor colorWithWhite:1 alpha:0.75]; [st addArrangedSubview:sec2];
-    slider(st,@"亮度",-0.5,0.5,gBrightness,^(float v){gBrightness=v;savePref(@"vce_brightness",v);});
-    slider(st,@"对比",0.2,2.5,gContrast,^(float v){gContrast=v;savePref(@"vce_contrast",v);});
-    slider(st,@"饱和",0.0,2.5,gSaturation,^(float v){gSaturation=v;savePref(@"vce_saturation",v);});
-    slider(st,@"Gamma",0.3,2.5,gGamma,^(float v){gGamma=v;savePref(@"vce_gamma",v);});
-    slider(st,@"色温",-1.0,1.0,gColorTemp,^(float v){gColorTemp=v;savePref(@"vce_temp",v);});
+    // 色彩页
+    UIStackView *color=[UIStackView new]; color.translatesAutoresizingMaskIntoConstraints=NO; color.axis=UILayoutConstraintAxisVertical; color.spacing=12; [pages[2] addSubview:color];
+    slider(color,@"亮度",-0.5,0.5,gBrightness,^(float v){gBrightness=v;savePref(@"vce_brightness",v);});
+    slider(color,@"对比",0.2,2.5,gContrast,^(float v){gContrast=v;savePref(@"vce_contrast",v);});
+    slider(color,@"饱和",0.0,2.5,gSaturation,^(float v){gSaturation=v;savePref(@"vce_saturation",v);});
+    slider(color,@"Gamma",0.3,2.5,gGamma,^(float v){gGamma=v;savePref(@"vce_gamma",v);});
+    slider(color,@"色温",-1.0,1.0,gColorTemp,^(float v){gColorTemp=v;savePref(@"vce_temp",v);});
+    UIButton *resetColor=smallBtn(@"↻ 重置色彩",^{gBrightness=0.08;gContrast=1.10;gSaturation=1.12;gGamma=0.92;gColorTemp=0;savePref(@"vce_brightness",gBrightness);savePref(@"vce_contrast",gContrast);savePref(@"vce_saturation",gSaturation);savePref(@"vce_gamma",gGamma);savePref(@"vce_temp",0);}); [resetColor.heightAnchor constraintEqualToConstant:42].active=YES; [color addArrangedSubview:resetColor];
+    [NSLayoutConstraint activateConstraints:@[[color.topAnchor constraintEqualToAnchor:pages[2].topAnchor constant:14],[color.leftAnchor constraintEqualToAnchor:pages[2].leftAnchor constant:8],[color.rightAnchor constraintEqualToAnchor:pages[2].rightAnchor constant:-8]]];
 
-    UILabel *sec3=[UILabel new]; sec3.text=@"— 打光 —"; sec3.textColor=[UIColor colorWithWhite:1 alpha:0.75]; [st addArrangedSubview:sec3];
-    UISwitch *le=[UISwitch new]; le.on=gLightEnabled; UILabel *lel=[UILabel new]; lel.text=@"启用脸部打光"; lel.textColor=UIColor.whiteColor; UIStackView *lr=[[UIStackView alloc] initWithArrangedSubviews:@[lel,le]]; lr.axis=UILayoutConstraintAxisHorizontal; lr.distribution=UIStackViewDistributionEqualSpacing; [st addArrangedSubview:lr]; [le addAction:[UIAction actionWithHandler:^(__kindof UIAction*a){gLightEnabled=((UISwitch*)a.sender).on; saveBool(@"vce_light_enabled",gLightEnabled);} ] forControlEvents:UIControlEventValueChanged];
-    slider(st,@"强度",0.0,1.0,gLightIntensity,^(float v){gLightIntensity=v;savePref(@"vce_light",v);});
-    slider(st,@"羽化",0.15,1.2,gLightFeather,^(float v){gLightFeather=v;savePref(@"vce_feather",v);});
-    slider(st,@"光源X",-1.0,1.0,gLightX,^(float v){gLightX=v;savePref(@"vce_light_x",v);});
-    slider(st,@"光源Y",-1.0,1.0,gLightY,^(float v){gLightY=v;savePref(@"vce_light_y",v);});
-    slider(st,@"红光",0,1,gLightR,^(float v){gLightR=v;savePref(@"vce_light_r",v);});
-    slider(st,@"绿光",0,1,gLightG,^(float v){gLightG=v;savePref(@"vce_light_g",v);});
-    slider(st,@"蓝光",0,1,gLightB,^(float v){gLightB=v;savePref(@"vce_light_b",v);});
-    slider(st,@"暗角",0.0,2.0,gVignette,^(float v){gVignette=v;savePref(@"vce_vignette",v);});
-    UIButton *reset=[UIButton buttonWithType:UIButtonTypeSystem]; [reset setTitle:@"重置" forState:UIControlStateNormal]; reset.backgroundColor=[[UIColor redColor] colorWithAlphaComponent:0.2]; reset.layer.cornerRadius=10; [reset.heightAnchor constraintEqualToConstant:44].active=YES; [reset addAction:[UIAction actionWithHandler:^(__kindof UIAction*a){gBrightness=0.08;gContrast=1.10;gSaturation=1.12;gGamma=0.92;gLightIntensity=0.18;gVignette=0; savePref(@"vce_brightness",gBrightness); savePref(@"vce_contrast",gContrast); savePref(@"vce_saturation",gSaturation); savePref(@"vce_gamma",gGamma); savePref(@"vce_light",gLightIntensity); savePref(@"vce_vignette",gVignette); [vc dismissViewControllerAnimated:YES completion:nil];}] forControlEvents:UIControlEventTouchUpInside]; [st addArrangedSubview:reset];
-    UIButton *close=[UIButton buttonWithType:UIButtonTypeSystem]; [close setTitle:@"关闭" forState:UIControlStateNormal]; close.backgroundColor=[[UIColor whiteColor] colorWithAlphaComponent:0.1]; close.layer.cornerRadius=10; [close.heightAnchor constraintEqualToConstant:44].active=YES; [close addAction:[UIAction actionWithHandler:^(__kindof UIAction*a){[vc dismissViewControllerAnimated:YES completion:nil];}] forControlEvents:UIControlEventTouchUpInside]; [st addArrangedSubview:close];
-    [NSLayoutConstraint activateConstraints:@[[bg.centerXAnchor constraintEqualToAnchor:vc.view.centerXAnchor],[bg.centerYAnchor constraintEqualToAnchor:vc.view.centerYAnchor],[bg.widthAnchor constraintEqualToConstant:360],[bg.heightAnchor constraintEqualToConstant:720],[scroll.topAnchor constraintEqualToAnchor:bg.topAnchor constant:18],[scroll.bottomAnchor constraintEqualToAnchor:bg.bottomAnchor constant:-18],[scroll.leftAnchor constraintEqualToAnchor:bg.leftAnchor constant:18],[scroll.rightAnchor constraintEqualToAnchor:bg.rightAnchor constant:-18],[st.topAnchor constraintEqualToAnchor:scroll.contentLayoutGuide.topAnchor],[st.bottomAnchor constraintEqualToAnchor:scroll.contentLayoutGuide.bottomAnchor],[st.leftAnchor constraintEqualToAnchor:scroll.contentLayoutGuide.leftAnchor],[st.rightAnchor constraintEqualToAnchor:scroll.contentLayoutGuide.rightAnchor],[st.widthAnchor constraintEqualToAnchor:scroll.frameLayoutGuide.widthAnchor]]];
+    // 打光页
+    UIStackView *light=[UIStackView new]; light.translatesAutoresizingMaskIntoConstraints=NO; light.axis=UILayoutConstraintAxisVertical; light.spacing=13; [pages[3] addSubview:light];
+    UISwitch *le=[UISwitch new]; le.on=gLightEnabled; UILabel *lel=[UILabel new]; lel.text=@"💡 启用脸部打光"; lel.textColor=UIColor.whiteColor; lel.font=[UIFont systemFontOfSize:16 weight:UIFontWeightBold]; UIStackView *lr=[[UIStackView alloc] initWithArrangedSubviews:@[lel,le]]; lr.axis=UILayoutConstraintAxisHorizontal; lr.distribution=UIStackViewDistributionEqualSpacing; [light addArrangedSubview:lr]; [le addAction:[UIAction actionWithHandler:^(__kindof UIAction*a){gLightEnabled=((UISwitch*)a.sender).on; saveBool(@"vce_light_enabled",gLightEnabled);} ] forControlEvents:UIControlEventValueChanged];
+    UISwitch *pick=[UISwitch new]; pick.on=YES; UILabel *pl=[UILabel new]; pl.text=@"🔍 屏幕取色"; pl.textColor=UIColor.whiteColor; pl.font=[UIFont systemFontOfSize:16 weight:UIFontWeightBold]; UIStackView *pr=[[UIStackView alloc] initWithArrangedSubviews:@[pl,pick]]; pr.axis=UILayoutConstraintAxisHorizontal; pr.distribution=UIStackViewDistributionEqualSpacing; [light addArrangedSubview:pr];
+    slider(light,@"强度",0.0,1.0,gLightIntensity,^(float v){gLightIntensity=v;savePref(@"vce_light",v);});
+    slider(light,@"羽化",0.15,1.2,gLightFeather,^(float v){gLightFeather=v;savePref(@"vce_feather",v);});
+    slider(light,@"光源X",-1.0,1.0,gLightX,^(float v){gLightX=v;savePref(@"vce_light_x",v);});
+    slider(light,@"光源Y",-1.0,1.0,gLightY,^(float v){gLightY=v;savePref(@"vce_light_y",v);});
+    segmented(light,@"光照方向",@[@"前",@"顶",@"底",@"左",@"右"],0,^(NSInteger i){ if(i==0){gLightX=0;gLightY=0;} if(i==1){gLightY=-1;} if(i==2){gLightY=1;} if(i==3){gLightX=-1;} if(i==4){gLightX=1;} savePref(@"vce_light_x",gLightX); savePref(@"vce_light_y",gLightY);});
+    [NSLayoutConstraint activateConstraints:@[[light.topAnchor constraintEqualToAnchor:pages[3].topAnchor constant:14],[light.leftAnchor constraintEqualToAnchor:pages[3].leftAnchor constant:8],[light.rightAnchor constraintEqualToAnchor:pages[3].rightAnchor constant:-8]]];
+
+    [NSLayoutConstraint activateConstraints:@[
+        [panel.centerXAnchor constraintEqualToAnchor:vc.view.centerXAnchor],
+        [panel.centerYAnchor constraintEqualToAnchor:vc.view.centerYAnchor],
+        [panel.widthAnchor constraintEqualToConstant:340],
+        [panel.heightAnchor constraintEqualToConstant:520],
+        [title.topAnchor constraintEqualToAnchor:panel.topAnchor constant:14],
+        [title.leftAnchor constraintEqualToAnchor:panel.leftAnchor constant:18],
+        [x.topAnchor constraintEqualToAnchor:panel.topAnchor constant:8],
+        [x.rightAnchor constraintEqualToAnchor:panel.rightAnchor constant:-8],
+        [x.widthAnchor constraintEqualToConstant:48],[x.heightAnchor constraintEqualToConstant:48],
+        [tabs.topAnchor constraintEqualToAnchor:title.bottomAnchor constant:14],
+        [tabs.leftAnchor constraintEqualToAnchor:panel.leftAnchor constant:18],
+        [tabs.rightAnchor constraintEqualToAnchor:panel.rightAnchor constant:-18],
+        [content.topAnchor constraintEqualToAnchor:tabs.bottomAnchor constant:12],
+        [content.leftAnchor constraintEqualToAnchor:panel.leftAnchor constant:18],
+        [content.rightAnchor constraintEqualToAnchor:panel.rightAnchor constant:-18],
+        [content.bottomAnchor constraintEqualToAnchor:panel.bottomAnchor constant:-18]
+    ]];
     [root presentViewController:vc animated:YES completion:nil];
 }
-
 @implementation VCEBGTapHandler
 + (instancetype)shared { static VCEBGTapHandler *h; static dispatch_once_t once; dispatch_once(&once, ^{ h=[VCEBGTapHandler new]; }); return h; }
 - (void)tapBG:(id)sender { UIResponder *r = [sender view].nextResponder; while (r && ![r isKindOfClass:UIViewController.class]) r = [r nextResponder]; UIViewController *vc = (UIViewController *)r; if (vc) [vc dismissViewControllerAnimated:YES completion:nil]; }
