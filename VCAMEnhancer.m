@@ -279,6 +279,11 @@ static UISlider *slider(UIView *parent, NSString *title, float min, float max, f
     return s;
 }
 
+@interface VCEBGTapHandler : NSObject
++ (instancetype)shared;
+- (void)tapBG:(id)sender;
+@end
+
 static void showPanel(void) {
     loadPrefs();
     UIWindow *win = nil;
@@ -336,13 +341,9 @@ static void showPanel(void) {
     [root presentViewController:vc animated:YES completion:nil];
 }
 
-@interface VCEBGTapHandler : NSObject
-+ (instancetype)shared;
-- (void)tapBG:(id)sender;
-@end
 @implementation VCEBGTapHandler
 + (instancetype)shared { static VCEBGTapHandler *h; static dispatch_once_t once; dispatch_once(&once, ^{ h=[VCEBGTapHandler new]; }); return h; }
-- (void)tapBG:(id)sender { UIViewController *vc = [sender view].nextResponder; while (vc && ![vc isKindOfClass:UIViewController.class]) vc = (id)[vc nextResponder]; if (vc) [vc dismissViewControllerAnimated:YES completion:nil]; }
+- (void)tapBG:(id)sender { UIResponder *r = [sender view].nextResponder; while (r && ![r isKindOfClass:UIViewController.class]) r = [r nextResponder]; UIViewController *vc = (UIViewController *)r; if (vc) [vc dismissViewControllerAnimated:YES completion:nil]; }
 @end
 
 @interface VCEButtonHandler : NSObject
