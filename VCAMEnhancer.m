@@ -13,9 +13,21 @@ static float gContrast = 1.10f;
 static float gSaturation = 1.12f;
 static float gGamma = 0.92f;
 static float gLightIntensity = 0.18f;
+static float gLightFeather = 0.62f;
+static float gLightX = 0.0f;
+static float gLightY = 0.0f;
+static float gLightR = 1.0f;
+static float gLightG = 0.92f;
+static float gLightB = 0.82f;
+static float gColorTemp = 0.0f;
 static float gVignette = 0.0f;
+static float gScale = 1.0f;
+static float gOffsetX = 0.0f;
+static float gOffsetY = 0.0f;
+static NSInteger gRotateMode = 0;
 static BOOL gEnabled = YES;
 static BOOL gMirror = NO;
+static BOOL gLightEnabled = YES;
 static BOOL gDidInstall = NO;
 static CIContext *gCIContext;
 static UIWindow *gOverlayWindow;
@@ -33,7 +45,19 @@ static void loadPrefs(void) {
     if ([ud objectForKey:@"vce_saturation"]) gSaturation = [ud floatForKey:@"vce_saturation"];
     if ([ud objectForKey:@"vce_gamma"]) gGamma = [ud floatForKey:@"vce_gamma"];
     if ([ud objectForKey:@"vce_light"]) gLightIntensity = [ud floatForKey:@"vce_light"];
+    if ([ud objectForKey:@"vce_light_enabled"]) gLightEnabled = [ud boolForKey:@"vce_light_enabled"];
+    if ([ud objectForKey:@"vce_feather"]) gLightFeather = [ud floatForKey:@"vce_feather"];
+    if ([ud objectForKey:@"vce_light_x"]) gLightX = [ud floatForKey:@"vce_light_x"];
+    if ([ud objectForKey:@"vce_light_y"]) gLightY = [ud floatForKey:@"vce_light_y"];
+    if ([ud objectForKey:@"vce_light_r"]) gLightR = [ud floatForKey:@"vce_light_r"];
+    if ([ud objectForKey:@"vce_light_g"]) gLightG = [ud floatForKey:@"vce_light_g"];
+    if ([ud objectForKey:@"vce_light_b"]) gLightB = [ud floatForKey:@"vce_light_b"];
+    if ([ud objectForKey:@"vce_temp"]) gColorTemp = [ud floatForKey:@"vce_temp"];
     if ([ud objectForKey:@"vce_vignette"]) gVignette = [ud floatForKey:@"vce_vignette"];
+    if ([ud objectForKey:@"vce_scale"]) gScale = [ud floatForKey:@"vce_scale"];
+    if ([ud objectForKey:@"vce_offset_x"]) gOffsetX = [ud floatForKey:@"vce_offset_x"];
+    if ([ud objectForKey:@"vce_offset_y"]) gOffsetY = [ud floatForKey:@"vce_offset_y"];
+    if ([ud objectForKey:@"vce_rotate"]) gRotateMode = [ud integerForKey:@"vce_rotate"];
 }
 
 static void savePref(NSString *key, float val) {
@@ -53,10 +77,19 @@ static CVPixelBufferRef processPixelBuffer(CVPixelBufferRef src) {
     CIImage *img = [CIImage imageWithCVPixelBuffer:src];
     if (!img) return src;
 
-    if (gMirror) {
-        CGRect e = img.extent;
-        img = [[img imageByApplyingTransform:CGAffineTransformMakeScale(-1, 1)] imageByApplyingTransform:CGAffineTransformMakeTranslation(e.size.width, 0)];
-    }
+    CGRect baseExtent = img.extent;
+    //画面：缩放/平移/镜像/旋转，模拟截图里的“画面”页
+    CGAffineTransform t = CGAffineTransformIdentity;
+    if (gMirror) t = CGAffineTransformScale(t, -1, 1);
+    CGFloat sc = clampf(gScale, 0.5f, 2.0f);
+    t = CGAffineTransformTranslate(t, baseExtent.size.width * 0.5 + gOffsetX * baseExtent.size.width, baseExtent.size.height * 0.5 + gOffsetY * baseExtent.size.height);
+    t = CGAffineTransformScale(t, sc, sc);
+    if (gRotateMode == 1) t = CGAffineTransformRotate(t, M_PI_2);
+    else if (gRotateMode == 2) t = CGAffineTransformRotate(t, M_PI);
+    else if (gRotateMode == 3) t = CGAffineTransformRotate(t, -M_PI_2);
+    t = CGAffineTransformTranslate(t, -baseExtent.size.width * 0.5, -baseExtent.size.height * 0.5);
+    img = [img imageByApplyingTransform:t];
+    img = [img imageByCroppingToRect:baseExtent];
 
     CIFilter *cc = [CIFilter filterWithName:@"CIColorControls"];
     [cc setValue:img forKey:kCIInputImageKey];
@@ -70,14 +103,23 @@ static CVPixelBufferRef processPixelBuffer(CVPixelBufferRef src) {
     [gamma setValue:@(clampf(gGamma, 0.2f, 3.0f)) forKey:@"inputPower"];
     img = gamma.outputImage ?: img;
 
-    if (gLightIntensity > 0.001f) {
+    if (fabs(gColorTemp) > 0.001f) {
+        CIFilter *temp = [CIFilter filterWithName:@"CITemperatureAndTint"];
+        [temp setValue:img forKey:kCIInputImageKey];
+        CGFloat kelvin = 6500 + gColorTemp * 3500;
+        [temp setValue:[CIVector vectorWithX:kelvin Y:0] forKey:@"inputNeutral"];
+        [temp setValue:[CIVector vectorWithX:6500 Y:0] forKey:@"inputTargetNeutral"];
+        img = temp.outputImage ?: img;
+    }
+
+    if (gLightEnabled && gLightIntensity > 0.001f) {
         CGRect e = img.extent;
-        CIVector *center = [CIVector vectorWithX:CGRectGetMidX(e) Y:CGRectGetMidY(e)];
+        CIVector *center = [CIVector vectorWithX:CGRectGetMidX(e) + gLightX * e.size.width * 0.45 Y:CGRectGetMidY(e) - gLightY * e.size.height * 0.45];
         CIFilter *grad = [CIFilter filterWithName:@"CIRadialGradient"];
         [grad setValue:center forKey:@"inputCenter"];
-        [grad setValue:@(MIN(e.size.width, e.size.height) * 0.05) forKey:@"inputRadius0"];
-        [grad setValue:@(MAX(e.size.width, e.size.height) * 0.62) forKey:@"inputRadius1"];
-        [grad setValue:[CIColor colorWithRed:1 green:0.92 blue:0.82 alpha:clampf(gLightIntensity,0,1)] forKey:@"inputColor0"];
+        [grad setValue:@(MIN(e.size.width, e.size.height) * 0.03) forKey:@"inputRadius0"];
+        [grad setValue:@(MAX(e.size.width, e.size.height) * clampf(gLightFeather,0.15f,1.2f)) forKey:@"inputRadius1"];
+        [grad setValue:[CIColor colorWithRed:clampf(gLightR,0,1) green:clampf(gLightG,0,1) blue:clampf(gLightB,0,1) alpha:clampf(gLightIntensity,0,1)] forKey:@"inputColor0"];
         [grad setValue:[CIColor colorWithRed:0 green:0 blue:0 alpha:0] forKey:@"inputColor1"];
         CIImage *light = [grad.outputImage imageByCroppingToRect:e];
         CIFilter *blend = [CIFilter filterWithName:@"CISoftLightBlendMode"];
@@ -214,6 +256,19 @@ static BOOL hookClassMethod(Class cls, SEL sel, IMP newImp, IMP *orig) {
     return YES;
 }
 
+static UISegmentedControl *segmented(UIView *parent, NSString *title, NSArray<NSString*> *items, NSInteger selected, void(^change)(NSInteger)) {
+    UILabel *lab = [[UILabel alloc] initWithFrame:CGRectZero];
+    lab.text = title; lab.textColor = UIColor.whiteColor; lab.font=[UIFont systemFontOfSize:12 weight:UIFontWeightSemibold];
+    UISegmentedControl *seg = [[UISegmentedControl alloc] initWithItems:items]; seg.selectedSegmentIndex = selected;
+    [seg addAction:[UIAction actionWithHandler:^(__kindof UIAction *a){ change(((UISegmentedControl*)a.sender).selectedSegmentIndex); }] forControlEvents:UIControlEventValueChanged];
+    UIStackView *row = [[UIStackView alloc] initWithArrangedSubviews:@[lab,seg]]; row.axis=UILayoutConstraintAxisHorizontal; row.spacing=8; [lab.widthAnchor constraintEqualToConstant:80].active=YES;
+    [(UIStackView*)parent addArrangedSubview:row]; return seg;
+}
+
+static UIButton *smallBtn(NSString *title, void(^tap)(void)) {
+    UIButton *b=[UIButton buttonWithType:UIButtonTypeSystem]; [b setTitle:title forState:UIControlStateNormal]; b.backgroundColor=[[UIColor whiteColor] colorWithAlphaComponent:0.12]; b.layer.cornerRadius=8; [b addAction:[UIAction actionWithHandler:^(__kindof UIAction *a){ tap(); }] forControlEvents:UIControlEventTouchUpInside]; return b;
+}
+
 static UISlider *slider(UIView *parent, NSString *title, float min, float max, float val, void(^change)(float)) {
     UILabel *lab = [[UILabel alloc] initWithFrame:CGRectZero];
     lab.text = [NSString stringWithFormat:@"%@ %.2f", title, val]; lab.textColor = UIColor.whiteColor; lab.font=[UIFont systemFontOfSize:12 weight:UIFontWeightSemibold];
@@ -237,19 +292,43 @@ static void showPanel(void) {
     if (!root) return;
     UIViewController *vc = [UIViewController new]; vc.modalPresentationStyle = UIModalPresentationOverFullScreen;
     UIView *bg = [[UIView alloc] initWithFrame:CGRectZero]; bg.backgroundColor=[[UIColor blackColor] colorWithAlphaComponent:0.72]; bg.layer.cornerRadius=18; bg.translatesAutoresizingMaskIntoConstraints=NO; [vc.view addSubview:bg];
-    UIStackView *st = [[UIStackView alloc] initWithFrame:CGRectZero]; st.axis=UILayoutConstraintAxisVertical; st.spacing=10; st.translatesAutoresizingMaskIntoConstraints=NO; [bg addSubview:st];
-    UILabel *title=[UILabel new]; title.text=@"VCAM Enhancer"; title.textColor=UIColor.whiteColor; title.font=[UIFont boldSystemFontOfSize:20]; [st addArrangedSubview:title];
+    UIScrollView *scroll = [[UIScrollView alloc] initWithFrame:CGRectZero]; scroll.translatesAutoresizingMaskIntoConstraints=NO; [bg addSubview:scroll];
+    UIStackView *st = [[UIStackView alloc] initWithFrame:CGRectZero]; st.axis=UILayoutConstraintAxisVertical; st.spacing=10; st.translatesAutoresizingMaskIntoConstraints=NO; [scroll addSubview:st];
+    UILabel *title=[UILabel new]; title.text=@"VCam 编辑"; title.textColor=UIColor.whiteColor; title.font=[UIFont boldSystemFontOfSize:20]; [st addArrangedSubview:title];
     UISwitch *en=[UISwitch new]; en.on=gEnabled; UILabel *enl=[UILabel new]; enl.text=@"启用处理"; enl.textColor=UIColor.whiteColor; UIStackView *er=[[UIStackView alloc] initWithArrangedSubviews:@[enl,en]]; er.axis=UILayoutConstraintAxisHorizontal; er.distribution=UIStackViewDistributionEqualSpacing; [st addArrangedSubview:er]; [en addAction:[UIAction actionWithHandler:^(__kindof UIAction *a){gEnabled=((UISwitch*)a.sender).on; saveBool(@"vce_enabled",gEnabled);} ] forControlEvents:UIControlEventValueChanged];
-    UISwitch *mi=[UISwitch new]; mi.on=gMirror; UILabel *mil=[UILabel new]; mil.text=@"镜像"; mil.textColor=UIColor.whiteColor; UIStackView *mr=[[UIStackView alloc] initWithArrangedSubviews:@[mil,mi]]; mr.axis=UILayoutConstraintAxisHorizontal; mr.distribution=UIStackViewDistributionEqualSpacing; [st addArrangedSubview:mr]; [mi addAction:[UIAction actionWithHandler:^(__kindof UIAction *a){gMirror=((UISwitch*)a.sender).on; saveBool(@"vce_mirror",gMirror);} ] forControlEvents:UIControlEventValueChanged];
+    segmented(st,@"模式",@[@"媒体",@"画面",@"色彩",@"打光"],3,^(NSInteger i){});
+
+    UILabel *sec1=[UILabel new]; sec1.text=@"— 画面 —"; sec1.textColor=[UIColor colorWithWhite:1 alpha:0.75]; [st addArrangedSubview:sec1];
+    slider(st,@"缩放",0.5,2.0,gScale,^(float v){gScale=v;savePref(@"vce_scale",v);});
+    slider(st,@"水平",-1.0,1.0,gOffsetX,^(float v){gOffsetX=v;savePref(@"vce_offset_x",v);});
+    slider(st,@"垂直",-1.0,1.0,gOffsetY,^(float v){gOffsetY=v;savePref(@"vce_offset_y",v);});
+    UIStackView *btns=[[UIStackView alloc] initWithArrangedSubviews:@[
+        smallBtn(@"左转",^{gRotateMode=3; [[NSUserDefaults standardUserDefaults] setInteger:gRotateMode forKey:@"vce_rotate"];}),
+        smallBtn(@"右转",^{gRotateMode=1; [[NSUserDefaults standardUserDefaults] setInteger:gRotateMode forKey:@"vce_rotate"];}),
+        smallBtn(@"镜像",^{gMirror=!gMirror; saveBool(@"vce_mirror",gMirror);}),
+        smallBtn(@"重置画面",^{gScale=1;gOffsetX=0;gOffsetY=0;gRotateMode=0;savePref(@"vce_scale",1);savePref(@"vce_offset_x",0);savePref(@"vce_offset_y",0);[[NSUserDefaults standardUserDefaults] setInteger:0 forKey:@"vce_rotate"];})
+    ]]; btns.axis=UILayoutConstraintAxisHorizontal; btns.spacing=6; btns.distribution=UIStackViewDistributionFillEqually; [st addArrangedSubview:btns];
+
+    UILabel *sec2=[UILabel new]; sec2.text=@"— 色彩 —"; sec2.textColor=[UIColor colorWithWhite:1 alpha:0.75]; [st addArrangedSubview:sec2];
     slider(st,@"亮度",-0.5,0.5,gBrightness,^(float v){gBrightness=v;savePref(@"vce_brightness",v);});
     slider(st,@"对比",0.2,2.5,gContrast,^(float v){gContrast=v;savePref(@"vce_contrast",v);});
     slider(st,@"饱和",0.0,2.5,gSaturation,^(float v){gSaturation=v;savePref(@"vce_saturation",v);});
     slider(st,@"Gamma",0.3,2.5,gGamma,^(float v){gGamma=v;savePref(@"vce_gamma",v);});
-    slider(st,@"打光",0.0,0.8,gLightIntensity,^(float v){gLightIntensity=v;savePref(@"vce_light",v);});
+    slider(st,@"色温",-1.0,1.0,gColorTemp,^(float v){gColorTemp=v;savePref(@"vce_temp",v);});
+
+    UILabel *sec3=[UILabel new]; sec3.text=@"— 打光 —"; sec3.textColor=[UIColor colorWithWhite:1 alpha:0.75]; [st addArrangedSubview:sec3];
+    UISwitch *le=[UISwitch new]; le.on=gLightEnabled; UILabel *lel=[UILabel new]; lel.text=@"启用脸部打光"; lel.textColor=UIColor.whiteColor; UIStackView *lr=[[UIStackView alloc] initWithArrangedSubviews:@[lel,le]]; lr.axis=UILayoutConstraintAxisHorizontal; lr.distribution=UIStackViewDistributionEqualSpacing; [st addArrangedSubview:lr]; [le addAction:[UIAction actionWithHandler:^(__kindof UIAction*a){gLightEnabled=((UISwitch*)a.sender).on; saveBool(@"vce_light_enabled",gLightEnabled);} ] forControlEvents:UIControlEventValueChanged];
+    slider(st,@"强度",0.0,1.0,gLightIntensity,^(float v){gLightIntensity=v;savePref(@"vce_light",v);});
+    slider(st,@"羽化",0.15,1.2,gLightFeather,^(float v){gLightFeather=v;savePref(@"vce_feather",v);});
+    slider(st,@"光源X",-1.0,1.0,gLightX,^(float v){gLightX=v;savePref(@"vce_light_x",v);});
+    slider(st,@"光源Y",-1.0,1.0,gLightY,^(float v){gLightY=v;savePref(@"vce_light_y",v);});
+    slider(st,@"红光",0,1,gLightR,^(float v){gLightR=v;savePref(@"vce_light_r",v);});
+    slider(st,@"绿光",0,1,gLightG,^(float v){gLightG=v;savePref(@"vce_light_g",v);});
+    slider(st,@"蓝光",0,1,gLightB,^(float v){gLightB=v;savePref(@"vce_light_b",v);});
     slider(st,@"暗角",0.0,2.0,gVignette,^(float v){gVignette=v;savePref(@"vce_vignette",v);});
     UIButton *reset=[UIButton buttonWithType:UIButtonTypeSystem]; [reset setTitle:@"重置" forState:UIControlStateNormal]; [reset addAction:[UIAction actionWithHandler:^(__kindof UIAction*a){gBrightness=0.08;gContrast=1.10;gSaturation=1.12;gGamma=0.92;gLightIntensity=0.18;gVignette=0; savePref(@"vce_brightness",gBrightness); savePref(@"vce_contrast",gContrast); savePref(@"vce_saturation",gSaturation); savePref(@"vce_gamma",gGamma); savePref(@"vce_light",gLightIntensity); savePref(@"vce_vignette",gVignette); [vc dismissViewControllerAnimated:YES completion:nil];}] forControlEvents:UIControlEventTouchUpInside]; [st addArrangedSubview:reset];
     UIButton *close=[UIButton buttonWithType:UIButtonTypeSystem]; [close setTitle:@"关闭" forState:UIControlStateNormal]; [close addAction:[UIAction actionWithHandler:^(__kindof UIAction*a){[vc dismissViewControllerAnimated:YES completion:nil];}] forControlEvents:UIControlEventTouchUpInside]; [st addArrangedSubview:close];
-    [NSLayoutConstraint activateConstraints:@[[bg.centerXAnchor constraintEqualToAnchor:vc.view.centerXAnchor],[bg.centerYAnchor constraintEqualToAnchor:vc.view.centerYAnchor],[bg.widthAnchor constraintEqualToConstant:330],[st.topAnchor constraintEqualToAnchor:bg.topAnchor constant:18],[st.bottomAnchor constraintEqualToAnchor:bg.bottomAnchor constant:-18],[st.leftAnchor constraintEqualToAnchor:bg.leftAnchor constant:18],[st.rightAnchor constraintEqualToAnchor:bg.rightAnchor constant:-18]]];
+    [NSLayoutConstraint activateConstraints:@[[bg.centerXAnchor constraintEqualToAnchor:vc.view.centerXAnchor],[bg.centerYAnchor constraintEqualToAnchor:vc.view.centerYAnchor],[bg.widthAnchor constraintEqualToConstant:360],[bg.heightAnchor constraintLessThanOrEqualToConstant:720],[scroll.topAnchor constraintEqualToAnchor:bg.topAnchor constant:18],[scroll.bottomAnchor constraintEqualToAnchor:bg.bottomAnchor constant:-18],[scroll.leftAnchor constraintEqualToAnchor:bg.leftAnchor constant:18],[scroll.rightAnchor constraintEqualToAnchor:bg.rightAnchor constant:-18],[st.topAnchor constraintEqualToAnchor:scroll.contentLayoutGuide.topAnchor],[st.bottomAnchor constraintEqualToAnchor:scroll.contentLayoutGuide.bottomAnchor],[st.leftAnchor constraintEqualToAnchor:scroll.contentLayoutGuide.leftAnchor],[st.rightAnchor constraintEqualToAnchor:scroll.contentLayoutGuide.rightAnchor],[st.widthAnchor constraintEqualToAnchor:scroll.frameLayoutGuide.widthAnchor]]];
     [root presentViewController:vc animated:YES completion:nil];
 }
 
