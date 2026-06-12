@@ -19,7 +19,7 @@ jobs:
             -isysroot "$SDK" \
             -miphoneos-version-min=14.0 \
             -fobjc-arc \
-            -framework Foundation -framework UIKit -framework CoreMedia -framework CoreVideo -framework CoreImage -framework CoreGraphics \
+            -framework Foundation -framework UIKit -framework CoreMedia -framework CoreVideo -framework CoreImage -framework CoreGraphics -framework AVFoundation \
             -install_name @rpath/VCAMEnhancer.dylib \
             -o out/VCAMEnhancer.dylib \
             VCAMEnhancer.m
