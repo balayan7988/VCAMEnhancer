@@ -31,6 +31,7 @@ static BOOL gEnabled = YES;
 static BOOL gMirror = NO;
 static BOOL gLightEnabled = YES;
 static BOOL gDisco = NO;
+static NSInteger gLightEffect = 0; // 0 manual, 1 rainbow, 2 breathe, 3 flash
 static float gDiscoSpeed = 0.08f;
 static BOOL gDidInstall = NO;
 static CIContext *gCIContext;
@@ -67,6 +68,7 @@ static void loadPrefs(void) {
     if ([ud objectForKey:@"vce_offset_y"]) gOffsetY = [ud floatForKey:@"vce_offset_y"];
     if ([ud objectForKey:@"vce_rotate"]) gRotateMode = [ud integerForKey:@"vce_rotate"];
     if ([ud objectForKey:@"vce_disco"]) gDisco = [ud boolForKey:@"vce_disco"];
+    if ([ud objectForKey:@"vce_effect"]) gLightEffect = [ud integerForKey:@"vce_effect"];
     if ([ud objectForKey:@"vce_disco_speed"]) gDiscoSpeed = [ud floatForKey:@"vce_disco_speed"];
 }
 
@@ -146,12 +148,20 @@ static CVPixelBufferRef processPixelBuffer(CVPixelBufferRef src) {
         [grad setValue:@(MIN(e.size.width, e.size.height) * 0.03) forKey:@"inputRadius0"];
         [grad setValue:@(MAX(e.size.width, e.size.height) * clampf(gLightFeather,0.15f,1.2f)) forKey:@"inputRadius1"];
         float lr = gLightR, lg = gLightG, lb = gLightB;
-        if (gDisco) {
+        float alpha = clampf(gLightIntensity,0,1);
+        if (gDisco || gLightEffect > 0) {
             NSTimeInterval tm = [NSDate.date timeIntervalSince1970];
-            float h = fmodf((float)tm * clampf(gDiscoSpeed,0.01f,1.0f), 1.0f);
-            hsvToRGB(h, 1.0f, 1.0f, &lr, &lg, &lb);
+            float speed = clampf(gDiscoSpeed,0.01f,2.0f);
+            if (gLightEffect == 2) { // breathe
+                alpha *= (0.35f + 0.65f * (0.5f + 0.5f * sinf((float)tm * speed * 6.28318f)));
+            } else if (gLightEffect == 3) { // flash
+                alpha *= (fmodf((float)tm * speed * 6.0f, 1.0f) > 0.5f) ? 1.0f : 0.15f;
+            } else { // rainbow/manual disco
+                float h = fmodf((float)tm * speed, 1.0f);
+                hsvToRGB(h, 1.0f, 1.0f, &lr, &lg, &lb);
+            }
         }
-        [grad setValue:[CIColor colorWithRed:clampf(lr,0,1) green:clampf(lg,0,1) blue:clampf(lb,0,1) alpha:clampf(gLightIntensity,0,1)] forKey:@"inputColor0"];
+        [grad setValue:[CIColor colorWithRed:clampf(lr,0,1) green:clampf(lg,0,1) blue:clampf(lb,0,1) alpha:alpha] forKey:@"inputColor0"];
         [grad setValue:[CIColor colorWithRed:0 green:0 blue:0 alpha:0] forKey:@"inputColor1"];
         CIImage *light = [grad.outputImage imageByCroppingToRect:e];
         CIFilter *blend = [CIFilter filterWithName:@"CISoftLightBlendMode"];
@@ -405,9 +415,19 @@ static void showPanel(void) {
 
     UIStackView *lightSt=basePage(pages[3]);
     UISwitch *le=[UISwitch new]; le.on=gLightEnabled; UILabel*lel=miniLabel(@"💡 启用脸部打光",15,UIFontWeightBold); UIStackView*lr=[[UIStackView alloc]initWithArrangedSubviews:@[lel,le]]; lr.axis=UILayoutConstraintAxisHorizontal; lr.distribution=UIStackViewDistributionEqualSpacing; [lightSt addArrangedSubview:lr]; [le addAction:[UIAction actionWithHandler:^(__kindof UIAction*a){gLightEnabled=((UISwitch*)a.sender).on;saveBool(@"vce_light_enabled",gLightEnabled);}] forControlEvents:UIControlEventValueChanged];
-    UISwitch *di=[UISwitch new]; di.on=gDisco; UILabel*dil=miniLabel(@"🔍 屏幕取色/五彩闪烁",15,UIFontWeightBold); UIStackView*dr=[[UIStackView alloc]initWithArrangedSubviews:@[dil,di]]; dr.axis=UILayoutConstraintAxisHorizontal; dr.distribution=UIStackViewDistributionEqualSpacing; [lightSt addArrangedSubview:dr]; [di addAction:[UIAction actionWithHandler:^(__kindof UIAction*a){gDisco=((UISwitch*)a.sender).on;saveBool(@"vce_disco",gDisco);}] forControlEvents:UIControlEventValueChanged];
+    UISwitch *di=[UISwitch new]; di.on=gDisco; UILabel*dil=miniLabel(@"🌈 彩虹循环",15,UIFontWeightBold); UIStackView*dr=[[UIStackView alloc]initWithArrangedSubviews:@[dil,di]]; dr.axis=UILayoutConstraintAxisHorizontal; dr.distribution=UIStackViewDistributionEqualSpacing; [lightSt addArrangedSubview:dr]; [di addAction:[UIAction actionWithHandler:^(__kindof UIAction*a){gDisco=((UISwitch*)a.sender).on;gLightEffect=gDisco?1:0;saveBool(@"vce_disco",gDisco);[[NSUserDefaults standardUserDefaults] setInteger:gLightEffect forKey:@"vce_effect"];}] forControlEvents:UIControlEventValueChanged];
+    UIStackView *preset=[UIStackView new]; preset.axis=UILayoutConstraintAxisHorizontal; preset.spacing=5; preset.distribution=UIStackViewDistributionFillEqually;
+    NSArray *presetData=@[@[@"白",@1,@1,@1],@[@"暖",@1,@0.75,@0.45],@[@"冷",@0.55,@0.75,@1],@[@"红",@1,@0.05,@0.05],@[@"绿",@0.05,@1,@0.1],@[@"蓝",@0.05,@0.2,@1],@[@"紫",@0.75,@0.05,@1]];
+    for(NSArray *pd in presetData){ NSString *tt=pd[0]; float rr=[pd[1] floatValue],gg=[pd[2] floatValue],bb=[pd[3] floatValue]; [preset addArrangedSubview:miniBtn(tt,^{gLightR=rr;gLightG=gg;gLightB=bb;gDisco=NO;gLightEffect=0;savePref(@"vce_light_r",rr);savePref(@"vce_light_g",gg);savePref(@"vce_light_b",bb);saveBool(@"vce_disco",NO);[[NSUserDefaults standardUserDefaults] setInteger:0 forKey:@"vce_effect"] ;})]; } [lightSt addArrangedSubview:preset];
+    UIStackView *effects=[UIStackView new]; effects.axis=UILayoutConstraintAxisHorizontal; effects.spacing=5; effects.distribution=UIStackViewDistributionFillEqually;
+    [effects addArrangedSubview:miniBtn(@"手动",^{gDisco=NO;gLightEffect=0;saveBool(@"vce_disco",NO);[[NSUserDefaults standardUserDefaults] setInteger:0 forKey:@"vce_effect"] ;})];
+    [effects addArrangedSubview:miniBtn(@"彩虹",^{gDisco=YES;gLightEffect=1;saveBool(@"vce_disco",YES);[[NSUserDefaults standardUserDefaults] setInteger:1 forKey:@"vce_effect"] ;})];
+    [effects addArrangedSubview:miniBtn(@"呼吸",^{gDisco=NO;gLightEffect=2;saveBool(@"vce_disco",NO);[[NSUserDefaults standardUserDefaults] setInteger:2 forKey:@"vce_effect"] ;})];
+    [effects addArrangedSubview:miniBtn(@"闪烁",^{gDisco=NO;gLightEffect=3;saveBool(@"vce_disco",NO);[[NSUserDefaults standardUserDefaults] setInteger:3 forKey:@"vce_effect"] ;})];
+    [lightSt addArrangedSubview:effects];
     miniSlider(lightSt,@"强度",0.0,1.0,gLightIntensity,^(float v){gLightIntensity=v;savePref(@"vce_light",v);});
     miniSlider(lightSt,@"羽化",0.15,1.2,gLightFeather,^(float v){gLightFeather=v;savePref(@"vce_feather",v);});
+    miniSlider(lightSt,@"速度",0.01,2.0,gDiscoSpeed,^(float v){gDiscoSpeed=v;savePref(@"vce_disco_speed",v);});
     UIStackView *dir=[UIStackView new]; dir.axis=UILayoutConstraintAxisHorizontal; dir.spacing=5; dir.distribution=UIStackViewDistributionFillEqually; NSArray *dn=@[@"前",@"顶",@"底",@"左",@"右"]; for(int i=0;i<dn.count;i++){ NSInteger idx=i; [dir addArrangedSubview:miniBtn(dn[i],^{ if(idx==0){gLightX=0;gLightY=0;} if(idx==1){gLightX=0;gLightY=-1;} if(idx==2){gLightX=0;gLightY=1;} if(idx==3){gLightX=-1;gLightY=0;} if(idx==4){gLightX=1;gLightY=0;} savePref(@"vce_light_x",gLightX);savePref(@"vce_light_y",gLightY);})]; } [lightSt addArrangedSubview:dir];
 
     selectTab(gActiveTab);
