@@ -365,13 +365,13 @@ static UISlider *miniSlider(UIView *parent, NSString *title, float min, float ma
     [row addArrangedSubview:lab]; [row addArrangedSubview:minus]; [row addArrangedSubview:s]; [row addArrangedSubview:plus]; [row addArrangedSubview:valLab];
     [(UIStackView*)parent addArrangedSubview:row]; return s;
 }
-static UIStackView *basePage(UIView *page) { UIStackView *st=[UIStackView new]; st.translatesAutoresizingMaskIntoConstraints=NO; st.axis=UILayoutConstraintAxisVertical; st.spacing=8; [page addSubview:st]; [NSLayoutConstraint activateConstraints:@[[st.topAnchor constraintEqualToAnchor:page.topAnchor],[st.leftAnchor constraintEqualToAnchor:page.leftAnchor],[st.rightAnchor constraintEqualToAnchor:page.rightAnchor]]]; return st; }
+static UIStackView *basePage(UIView *page) { UIScrollView *sc=[UIScrollView new]; sc.translatesAutoresizingMaskIntoConstraints=NO; sc.showsVerticalScrollIndicator=NO; sc.alwaysBounceVertical=YES; [page addSubview:sc]; [NSLayoutConstraint activateConstraints:@[[sc.topAnchor constraintEqualToAnchor:page.topAnchor],[sc.leftAnchor constraintEqualToAnchor:page.leftAnchor],[sc.rightAnchor constraintEqualToAnchor:page.rightAnchor],[sc.bottomAnchor constraintEqualToAnchor:page.bottomAnchor]]]; UIStackView *st=[UIStackView new]; st.translatesAutoresizingMaskIntoConstraints=NO; st.axis=UILayoutConstraintAxisVertical; st.spacing=8; [sc addSubview:st]; [NSLayoutConstraint activateConstraints:@[[st.topAnchor constraintEqualToAnchor:sc.contentLayoutGuide.topAnchor],[st.leadingAnchor constraintEqualToAnchor:sc.frameLayoutGuide.leadingAnchor],[st.trailingAnchor constraintEqualToAnchor:sc.frameLayoutGuide.trailingAnchor],[st.bottomAnchor constraintEqualToAnchor:sc.contentLayoutGuide.bottomAnchor],[st.widthAnchor constraintEqualToAnchor:sc.frameLayoutGuide.widthAnchor]]]; return st; }
 
 static void showPanel(void) {
     loadPrefs();
     if (gPanelWindow && !gPanelWindow.hidden) { gPanelWindow.hidden=YES; gPanelWindow=nil; return; }
     CGRect screen = UIScreen.mainScreen.bounds;
-    CGFloat pw=316, ph=348;
+    CGFloat pw=316; CGFloat ph=MIN(screen.size.height - 60.0, 520.0);
     NSUserDefaults *ud = [NSUserDefaults standardUserDefaults];
     CGFloat savedX = [ud objectForKey:@"vce_panel_x"] ? [ud floatForKey:@"vce_panel_x"] : (screen.size.width-pw)/2.0;
     CGFloat savedY = [ud objectForKey:@"vce_panel_y"] ? [ud floatForKey:@"vce_panel_y"] : (screen.size.height-ph)*0.58;
@@ -416,6 +416,33 @@ static void showPanel(void) {
     UIStackView *lightSt=basePage(pages[3]);
     UISwitch *le=[UISwitch new]; le.on=gLightEnabled; UILabel*lel=miniLabel(@"💡 启用脸部打光",15,UIFontWeightBold); UIStackView*lr=[[UIStackView alloc]initWithArrangedSubviews:@[lel,le]]; lr.axis=UILayoutConstraintAxisHorizontal; lr.distribution=UIStackViewDistributionEqualSpacing; [lightSt addArrangedSubview:lr]; [le addAction:[UIAction actionWithHandler:^(__kindof UIAction*a){gLightEnabled=((UISwitch*)a.sender).on;saveBool(@"vce_light_enabled",gLightEnabled);}] forControlEvents:UIControlEventValueChanged];
     UISwitch *di=[UISwitch new]; di.on=gDisco; UILabel*dil=miniLabel(@"🌈 彩虹循环",15,UIFontWeightBold); UIStackView*dr=[[UIStackView alloc]initWithArrangedSubviews:@[dil,di]]; dr.axis=UILayoutConstraintAxisHorizontal; dr.distribution=UIStackViewDistributionEqualSpacing; [lightSt addArrangedSubview:dr]; [di addAction:[UIAction actionWithHandler:^(__kindof UIAction*a){gDisco=((UISwitch*)a.sender).on;gLightEffect=gDisco?1:0;saveBool(@"vce_disco",gDisco);[[NSUserDefaults standardUserDefaults] setInteger:gLightEffect forKey:@"vce_effect"];}] forControlEvents:UIControlEventValueChanged];
+    UIButton *resetLight=miniBtn(@"↻ 重置灯光",^{
+        gLightEnabled = YES;
+        gDisco = NO;
+        gLightEffect = 0;
+        gLightIntensity = 0.18f;
+        gLightFeather = 0.62f;
+        gLightX = 0.0f;
+        gLightY = 0.0f;
+        gLightR = 1.0f;
+        gLightG = 0.92f;
+        gLightB = 0.82f;
+        gDiscoSpeed = 0.08f;
+        le.on = gLightEnabled;
+        di.on = gDisco;
+        saveBool(@"vce_light_enabled",gLightEnabled);
+        saveBool(@"vce_disco",gDisco);
+        [[NSUserDefaults standardUserDefaults] setInteger:gLightEffect forKey:@"vce_effect"];
+        savePref(@"vce_light",gLightIntensity);
+        savePref(@"vce_feather",gLightFeather);
+        savePref(@"vce_light_x",gLightX);
+        savePref(@"vce_light_y",gLightY);
+        savePref(@"vce_light_r",gLightR);
+        savePref(@"vce_light_g",gLightG);
+        savePref(@"vce_light_b",gLightB);
+        savePref(@"vce_disco_speed",gDiscoSpeed);
+    });
+    [lightSt addArrangedSubview:resetLight];
     UIStackView *preset=[UIStackView new]; preset.axis=UILayoutConstraintAxisHorizontal; preset.spacing=5; preset.distribution=UIStackViewDistributionFillEqually;
     NSArray *presetData=@[@[@"白",@1,@1,@1],@[@"暖",@1,@0.75,@0.45],@[@"冷",@0.55,@0.75,@1],@[@"红",@1,@0.05,@0.05],@[@"绿",@0.05,@1,@0.1],@[@"蓝",@0.05,@0.2,@1],@[@"紫",@0.75,@0.05,@1]];
     for(NSArray *pd in presetData){ NSString *tt=pd[0]; float rr=[pd[1] floatValue],gg=[pd[2] floatValue],bb=[pd[3] floatValue]; [preset addArrangedSubview:miniBtn(tt,^{gLightR=rr;gLightG=gg;gLightB=bb;gDisco=NO;gLightEffect=0;savePref(@"vce_light_r",rr);savePref(@"vce_light_g",gg);savePref(@"vce_light_b",bb);saveBool(@"vce_disco",NO);[[NSUserDefaults standardUserDefaults] setInteger:0 forKey:@"vce_effect"] ;})]; } [lightSt addArrangedSubview:preset];
